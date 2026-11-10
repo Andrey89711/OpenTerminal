@@ -1,3 +1,4 @@
+mod prompt;
 mod terminal;
 
 use tauri::Manager;
@@ -11,6 +12,10 @@ pub fn run() {
             terminal::write_terminal,
             terminal::resize_terminal,
             terminal::close_terminal,
+            prompt::discover_openprompt,
+            prompt::openprompt_preview,
+            prompt::openprompt_set_theme,
+            prompt::openprompt_session_script,
         ])
         .build(tauri::generate_context!())
         .expect("Could not start OpenTerminal");

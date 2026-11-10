@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, Plus, Settings2, TerminalSquare, X } from 'lucide-react';
 import { Terminal } from './Terminal';
 import { WindowControls } from './WindowControls';
-import { shellNames, type Settings, type Shell, type Tab } from './types';
+import { OpenPromptSettings } from './OpenPromptSettings';
+import { fontFamilies, shellNames, type Settings, type Shell, type Tab } from './types';
 
 function loadSettings(): Settings {
   try {
@@ -10,8 +11,10 @@ function loadSettings(): Settings {
     return {
       fontSize: typeof value.fontSize === 'number' ? Math.min(28, Math.max(10, value.fontSize)) : 14,
       theme: value.theme === 'light' ? 'light' : 'dark',
+      fontFamily: fontFamilies.includes(value.fontFamily) ? value.fontFamily : 'Cascadia Mono',
+      promptPath: typeof value.promptPath === 'string' ? value.promptPath : '',
     };
-  } catch { return { fontSize: 14, theme: 'dark' }; }
+  } catch { return { fontSize: 14, theme: 'dark', fontFamily: 'Cascadia Mono', promptPath: '' }; }
 }
 
 const firstTab: Tab = { id: crypto.randomUUID(), shell: 'powershell' };
@@ -101,9 +104,11 @@ export function App() {
       {settingsOpen && <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}><section className="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
         <div className="settings-heading"><div><div className="eyebrow">OpenTerminal</div><h2 id="settings-title">Параметры</h2></div><button className="icon-button" autoFocus aria-label="Закрыть настройки" onClick={() => setSettingsOpen(false)}><X size={18} /></button></div>
         <label className="setting-row"><span>Размер шрифта<small>Cascadia Mono / Consolas</small></span><select value={settings.fontSize} onChange={(event) => setSettings({ ...settings, fontSize: Number(event.target.value) })}>{Array.from({ length: 19 }, (_, i) => i + 10).map((size) => <option key={size} value={size}>{size} px</option>)}</select></label>
+        <label className="setting-row"><span>Шрифт<small>Используется установленный шрифт; иначе — системный запасной</small></span><select value={settings.fontFamily} onChange={(event) => setSettings({ ...settings, fontFamily: event.target.value as Settings['fontFamily'] })}>{fontFamilies.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
         <label className="setting-row"><span>Оформление<small>Цвета интерфейса и терминала</small></span><select value={settings.theme} onChange={(event) => setSettings({ ...settings, theme: event.target.value as Settings['theme'] })}><option value="dark">Тёмное</option><option value="light">Светлое</option></select></label>
+        <OpenPromptSettings settings={settings} onPathChange={(promptPath) => setSettings((current) => ({ ...current, promptPath }))} activeTab={tabs.find((tab) => tab.id === activeId)} connected={statuses[activeId] === 'Подключён'} />
         <div className="shortcuts"><div className="eyebrow">ГОРЯЧИЕ КЛАВИШИ</div><p>Новая вкладка <kbd>Ctrl Shift T</kbd></p><p>Закрыть вкладку <kbd>Ctrl Shift W</kbd></p><p>Размер шрифта <kbd>Ctrl + колесо</kbd></p><p>Копировать выделение <kbd>Ctrl C</kbd></p><p>Копировать / вставить <kbd>Ctrl Shift C / V</kbd></p><p>Остановить без выделения <kbd>Ctrl C</kbd></p></div>
-        <p className="settings-note">Настройки сохраняются автоматически на этом устройстве.</p>
+        <p className="settings-note">Настройки терминала сохраняются автоматически на этом устройстве. Тема OpenPrompt — только кнопкой «Сохранить тему».</p>
       </section></div>}
     </main>
   );

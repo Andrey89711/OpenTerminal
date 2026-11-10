@@ -3,13 +3,14 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import { Terminal as XTerm, type ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { Settings, Tab } from './types';
+import { terminalFont } from './types';
 
 type TerminalEvent =
   | { type: 'data'; data: number[] }
   | { type: 'exit'; code: number }
   | { type: 'error'; message: string };
 
-const themes: Record<Settings['theme'], ITheme> = {
+export const themes: Record<Settings['theme'], ITheme> = {
   dark: {
     background: '#0c0c0c', foreground: '#cccccc', cursor: '#ffffff',
     selectionBackground: '#ffffff40', black: '#0c0c0c', red: '#c50f1f',
@@ -44,7 +45,7 @@ export function Terminal({ tab, active, settings, onStatus, onTitle, onFontSizeC
 
   useEffect(() => {
     const terminal = new XTerm({
-      fontFamily: '"Cascadia Mono", Consolas, "Cascadia Code", monospace',
+      fontFamily: terminalFont(settings.fontFamily),
       fontSize: settings.fontSize, lineHeight: 1,
       fontWeight: 'normal', fontWeightBold: 'bold',
       theme: themes[settings.theme], cursorBlink: true, cursorStyle: 'bar',
@@ -169,6 +170,7 @@ export function Terminal({ tab, active, settings, onStatus, onTitle, onFontSizeC
   useEffect(() => {
     if (!runtime.current) return;
     runtime.current.terminal.options.fontSize = settings.fontSize;
+    runtime.current.terminal.options.fontFamily = terminalFont(settings.fontFamily);
     runtime.current.terminal.options.theme = themes[settings.theme];
     runtime.current.resize();
   }, [settings]);

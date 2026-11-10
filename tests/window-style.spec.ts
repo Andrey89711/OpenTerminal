@@ -7,9 +7,11 @@ test.beforeEach(async ({ page }) => {
     const host = window as unknown as Record<string, unknown>;
     const calls: string[] = [];
     const input: string[] = [];
+    const ipcArgs: { command: string; args: Record<string, any> }[] = [];
     host.isTauri = true;
     host.__TEST_CALLS__ = calls;
     host.__TEST_INPUT__ = input;
+    host.__TEST_ARGS__ = ipcArgs;
     host.__TEST_COPIED__ = '';
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
       writeText: async (text: string) => {
@@ -23,6 +25,17 @@ test.beforeEach(async ({ page }) => {
       unregisterCallback: () => {},
       invoke: async (command: string, args: Record<string, any>) => {
         calls.push(command);
+        ipcArgs.push({ command, args });
+        if (command === 'discover_openprompt') {
+          if (host.__TEST_PROMPT_MISSING__) throw 'OpenPrompt не найден. Укажите путь к файлу.';
+          return { path: args.configuredPath || "C:\\User's files\\openprompt.exe", version: 'openprompt 0.2.0', dev_fallback: !args.configuredPath };
+        }
+        if (command === 'openprompt_preview') {
+          if (host.__TEST_PREVIEW_FAIL__) throw 'Нужен OpenPrompt 0.2+ с поддержкой preview --json.';
+          return { theme: args.theme, ansi: `\x1b[32m${args.theme} C:\\demo\x1b[0m > `, text: `${args.theme} C:\\demo > ` };
+        }
+        if (command === 'openprompt_session_script') return `Invoke-Expression (& '${args.path.replace(/'/g, "''")}' init powershell | Out-String)\r`;
+        if (command === 'openprompt_set_theme' && host.__TEST_SAVE_FAIL__) throw 'Не удалось сохранить тему.';
         if (command === 'write_terminal') input.push(args.data);
         if (command === 'plugin:window|is_maximized') return false;
         if (command === 'plugin:event|listen') return 1;
@@ -145,4 +158,86 @@ test('caption buttons use the window API and remain visible with many tabs', asy
   expect(calls).toContain('plugin:window|close');
   const close = await page.getByRole('button', { name: 'Закрыть окно', exact: true }).boundingBox();
   expect(close!.x + close!.width).toBeLessThanOrEqual(600);
+});
+
+async function openSettings(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Выбрать оболочку' }).click();
+  await page.getByRole('button', { name: /Параметры/ }).click();
+}
+
+test('OpenPrompt detection, read-only ANSI preview, explicit theme save and font persistence', async ({ page }) => {
+  await openSettings(page);
+  await expect(page.getByText('openprompt 0.2.0', { exact: false })).toBeVisible();
+  const preview = page.getByLabel('ANSI-предпросмотр OpenPrompt');
+  await expect(preview.locator('.xterm')).toHaveCount(1);
+  await expect(preview.locator('.xterm-rows')).toContainText('classic C:\\demo');
+  await page.getByRole('combobox', { name: 'Тема OpenPrompt', exact: true }).selectOption('blocks');
+  await expect(preview.locator('.xterm-rows')).toContainText('blocks C:\\demo');
+  expect(await page.evaluate(() => (window as any).__TEST_CALLS__)).not.toContain('openprompt_set_theme');
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
+  await page.getByRole('button', { name: 'Сохранить тему', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Тема blocks сохранена в OpenPrompt.');
+  const save = await page.evaluate(() => (window as any).__TEST_ARGS__.find((call: any) => call.command === 'openprompt_set_theme'));
+  expect(save.args).toEqual({ path: "C:\\User's files\\openprompt.exe", theme: 'blocks' });
+  await page.getByRole('combobox', { name: /^Шрифт / }).selectOption('CaskaydiaCove Nerd Font');
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('openterminal.settings')!).fontFamily)).toBe('CaskaydiaCove Nerd Font');
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCount(0);
+  await page.reload();
+  await openSettings(page);
+  await expect(page.locator('select').filter({ has: page.locator('option[value="Consolas"]') })).toHaveValue('CaskaydiaCove Nerd Font');
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
+});
+
+test('OpenPrompt session command requires visible command and explicit approval every time', async ({ page }) => {
+  await openSettings(page);
+  const prepare = page.getByRole('button', { name: 'Включить в текущей сессии…' });
+  await expect(prepare).toBeEnabled();
+  await prepare.click();
+  const expected = "Invoke-Expression (& 'C:\\User''s files\\openprompt.exe' init powershell | Out-String)\r";
+  await expect(page.locator('.prompt-confirmation pre')).toHaveText(expected.trimEnd());
+  const execute = page.getByRole('button', { name: 'Выполнить команду', exact: true });
+  await expect(execute).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
+  await page.getByLabel('Подтверждаю выполнение этой команды в текущей сессии').check();
+  await execute.click();
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([expected]);
+  await expect(page.locator('.prompt-confirmation')).toHaveCount(0);
+  await prepare.click();
+  await expect(execute).toBeDisabled();
+  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([expected]);
+});
+
+test('OpenPrompt optional path, detection errors and preview errors are recoverable without session writes', async ({ page }) => {
+  await page.evaluate(() => { (window as any).__TEST_PROMPT_MISSING__ = true; });
+  await openSettings(page);
+  await expect(page.getByRole('alert')).toContainText('OpenPrompt не найден');
+  await expect(page.getByRole('button', { name: 'Сохранить тему', exact: true })).toBeDisabled();
+  await page.evaluate(() => { (window as any).__TEST_PROMPT_MISSING__ = false; });
+  await page.getByLabel('Путь к OpenPrompt (необязательно)').fill('C:\\Tools\\openprompt.exe');
+  await expect(page.locator('.prompt-found')).toContainText('C:\\Tools\\openprompt.exe');
+  await expect(page.getByLabel('ANSI-предпросмотр OpenPrompt').locator('.xterm')).toHaveCount(1);
+  await page.evaluate(() => { (window as any).__TEST_PREVIEW_FAIL__ = true; });
+  await page.getByRole('combobox', { name: 'Тема OpenPrompt', exact: true }).selectOption('minimal');
+  await expect(page.getByRole('alert')).toContainText('preview --json');
+  await expect(page.getByLabel('ANSI-предпросмотр OpenPrompt')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
+});
+
+test('OpenPrompt cannot enable CMD and never carries approval into another session', async ({ page }) => {
+  await openSettings(page);
+  await expect(page.getByRole('button', { name: 'Включить в текущей сессии…' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Включить в текущей сессии…' }).click();
+  await page.getByLabel('Подтверждаю выполнение этой команды в текущей сессии').check();
+  await page.keyboard.press('Control+Shift+t');
+  await expect(page.locator('.prompt-confirmation')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Закрыть настройки', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Параметры' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Выбрать оболочку' }).click();
+  await page.getByRole('button', { name: 'Command Prompt', exact: true }).click();
+  await openSettings(page);
+  await expect(page.locator('.prompt-found')).toContainText('openprompt 0.2.0');
+  await expect(page.getByRole('button', { name: 'Включить в текущей сессии…' })).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
 });

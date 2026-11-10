@@ -14,5 +14,10 @@ export default defineConfig({
       },
     },
   },
-  server: { port: 1420, strictPort: true },
+  server: {
+    port: 1420,
+    strictPort: true,
+    // Rust rebuilds are watched by Tauri, not Vite; PDBs can be locked on Windows.
+    watch: { ignored: ['**/src-tauri/**'] },
+  },
 });
