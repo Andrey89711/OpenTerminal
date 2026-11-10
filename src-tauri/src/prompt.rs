@@ -136,6 +136,14 @@ fn discover(configured_path: Option<String>) -> Result<Discovery, String> {
     if let Some(path) = configured_path.filter(|s| !s.trim().is_empty()) {
         candidates.push((PathBuf::from(path), false));
     } else {
+        // A portable install can keep the trusted helper beside OpenTerminal.
+        if let Ok(current) = std::env::current_exe() {
+            if let Some(directory) = current.parent() {
+                for name in ["openprompt.exe", "openprompt"] {
+                    candidates.push((directory.join(name), false));
+                }
+            }
+        }
         if let Some(path) = std::env::var_os("PATH") {
             for dir in std::env::split_paths(&path) {
                 if !dir.is_absolute() {

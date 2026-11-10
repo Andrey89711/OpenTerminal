@@ -103,7 +103,7 @@ export function OpenPromptSettings({ settings, onPathChange, activeTab, connecte
   return <section className="prompt-settings" aria-labelledby="prompt-title">
     <h3 id="prompt-title">OpenPrompt</h3>
     <p className="settings-note">OpenPrompt 0.2+. Предпросмотр не меняет настройки. Профили PowerShell и автозапуск не изменяются.</p>
-    <label className="prompt-path">Путь к OpenPrompt (необязательно)<input value={settings.promptPath} disabled={busy} placeholder="Автопоиск в PATH и ~/.cargo/bin" onChange={(event) => onPathChange(event.target.value)} /></label>
+    <label className="prompt-path">Путь к OpenPrompt (необязательно)<input value={settings.promptPath} disabled={busy} placeholder="Рядом с приложением, в PATH и ~/.cargo/bin" onChange={(event) => onPathChange(event.target.value)} /></label>
     <button className="secondary-button" disabled={searching || busy} onClick={() => setRetry((value) => value + 1)}>Найти OpenPrompt</button>
     {searching && <p className="settings-note">Поиск OpenPrompt…</p>}
     {discovery && <p className="prompt-found">{discovery.version}<small>{discovery.path}</small>{discovery.dev_fallback && <small>Найдена локальная сборка для разработки (dev fallback).</small>}</p>}
