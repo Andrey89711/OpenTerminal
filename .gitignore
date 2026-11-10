@@ -1,0 +1,16 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.local
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+*.log
+*.pem
+*.key
+*.pfx
+.DS_Store
+Thumbs.db

@@ -1,0 +1,19 @@
+[package]
+name = "openterminal"
+version = "0.1.0"
+description = "A compact desktop terminal"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Andrey89711/OpenTerminal"
+
+[lib]
+name = "openterminal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+portable-pty = "0.9"

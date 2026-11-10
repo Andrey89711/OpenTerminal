@@ -1,0 +1,33 @@
+Add-Type -AssemblyName System.Drawing
+$directory = Join-Path $PSScriptRoot '../src-tauri/icons'
+[System.IO.Directory]::CreateDirectory($directory) | Out-Null
+$bitmap = New-Object System.Drawing.Bitmap(64, 64)
+$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+$graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+$graphics.Clear([System.Drawing.Color]::FromArgb(16, 17, 22))
+$pen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(168, 181, 255), 5)
+$graphics.DrawLine($pen, 17, 19, 29, 31)
+$graphics.DrawLine($pen, 29, 31, 17, 43)
+$graphics.DrawLine($pen, 34, 43, 48, 43)
+$memory = New-Object System.IO.MemoryStream
+$bitmap.Save($memory, [System.Drawing.Imaging.ImageFormat]::Png)
+$bytes = $memory.ToArray()
+$file = [System.IO.File]::Create((Join-Path $directory 'icon.ico'))
+$writer = New-Object System.IO.BinaryWriter($file)
+$writer.Write([uint16]0)
+$writer.Write([uint16]1)
+$writer.Write([uint16]1)
+$writer.Write([byte]64)
+$writer.Write([byte]64)
+$writer.Write([byte]0)
+$writer.Write([byte]0)
+$writer.Write([uint16]1)
+$writer.Write([uint16]32)
+$writer.Write([uint32]$bytes.Length)
+$writer.Write([uint32]22)
+$writer.Write($bytes)
+$writer.Dispose()
+$memory.Dispose()
+$pen.Dispose()
+$graphics.Dispose()
+$bitmap.Dispose()
