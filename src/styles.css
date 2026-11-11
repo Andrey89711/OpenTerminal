@@ -71,12 +71,20 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); o
 .shell-menu kbd { margin-left: auto; font-size: 10px; }
 .menu-separator { height: 1px; background: var(--border); margin: 4px 8px; }
 .workspace { flex: 1; position: relative; min-height: 0; overflow: hidden; }
+.settings-pane { position: absolute; inset: 0; visibility: hidden; pointer-events: none; z-index: 1; }
+.settings-pane.active { visibility: visible; pointer-events: auto; }
+.tabs-compact .tab { width: auto; min-width: 120px; max-width: 240px; flex: 0 1 auto; }
+.storage-error { position: fixed; bottom: 12px; left: 12px; right: 12px; z-index: 20; padding: 12px; background: #712323; color: white; border-radius: 4px; font-size: 12px; }
+.confirm-actions { display: flex; justify-content: end; gap: 12px; margin-top: 20px; }
+.paste-backdrop { position: absolute; inset: 0; background: #0008; z-index: 5; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.paste-confirmation { background: var(--raised); color: var(--text); width: 520px; max-width: 100%; padding: 24px; border: 1px solid var(--border); border-radius: 8px; font: 13px 'Segoe UI', sans-serif; }
+.paste-confirmation h2 { font-size: 20px; }
+.paste-confirmation pre { white-space: pre-wrap; max-height: 180px; overflow: auto; background: var(--bg); padding: 12px; }
 .terminal-pane { position: absolute; inset: 0; padding: 8px 0 4px 8px; visibility: hidden; pointer-events: none; }
 .terminal-pane.active { visibility: visible; pointer-events: auto; }
 .terminal-host { width: 100%; height: 100%; }
 .terminal-pane .xterm { height: 100%; }
-.terminal-notice { position: absolute; top: 12px; right: 16px; z-index: 2; pointer-events: none; padding: 9px 14px; border: 1px solid var(--border); border-radius: 5px; background: var(--raised); color: var(--text); box-shadow: 0 4px 16px #0004; font-size: 12px; font-family: 'Segoe UI', sans-serif; }
-.terminal-notice.error { color: #e74856; }
+.app-notice { position: absolute; top: 12px; right: 16px; z-index: 8; pointer-events: none; max-width: calc(100% - 32px); padding: 9px 14px; border: 0; border-radius: 0; background: #000; color: #fff; box-shadow: none; font: 12px/1.4 'Segoe UI', sans-serif; overflow-wrap: anywhere; }
 .xterm-viewport { scrollbar-width: thin; scrollbar-color: #797979 transparent; }
 .xterm-viewport::-webkit-scrollbar { width: 10px; }
 .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
@@ -91,7 +99,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); o
 kbd { font-family: inherit; color: var(--muted); font-size: 11px; }
 .empty-state kbd { margin-top: 14px; }
 .modal-backdrop { position: fixed; inset: 40px 0 0; z-index: 10; background: #0006; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.settings-panel { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; width: 640px; max-width: 100%; max-height: 100%; overflow: auto; padding: 28px; box-shadow: 0 20px 60px #0005; }
+.settings-panel { background: var(--raised); border: 1px solid var(--border); border-radius: 8px; width: 520px; max-width: 100%; max-height: 100%; overflow: auto; padding: 28px; box-shadow: 0 20px 60px #0005; }
 .settings-heading { display: flex; justify-content: space-between; align-items: start; margin-bottom: 25px; }
 .eyebrow { font-size: 12px; color: var(--muted); }
 h2 { font-size: 25px; font-weight: 600; margin: 7px 0 0; }
@@ -102,21 +110,4 @@ select { color: var(--text); background: var(--surface); border: 1px solid var(-
 .shortcuts p { display: flex; justify-content: space-between; font-size: 12px; margin: 16px 0; }
 .shortcuts kbd { padding: 3px 6px; }
 .settings-note { font-size: 11px; color: var(--muted); margin: 24px 0 0; }
-.prompt-settings { border-top: 1px solid var(--border); margin-bottom: 24px; font-size: 12px; }
-.prompt-settings h3 { font-size: 17px; margin-bottom: 10px; }
-.prompt-settings .settings-note { margin: 10px 0; line-height: 1.5; }
-.prompt-path { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 10px; }
-.prompt-path input { width: 100%; font: inherit; padding: 8px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
-.prompt-path input:focus-visible { outline: 2px solid var(--accent); }
-.prompt-found small { display: block; color: var(--muted); overflow-wrap: anywhere; margin-top: 5px; }
-.prompt-preview { height: 112px; padding: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
-.prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.secondary-button { font-size: 12px; border: 1px solid var(--border); background: var(--surface); padding: 8px 10px; border-radius: 4px; }
-.secondary-button:hover:not(:disabled) { background: var(--hover); }
-.secondary-button:disabled { opacity: .45; }
-.prompt-confirmation { border: 1px solid var(--accent); padding: 12px; border-radius: 4px; }
-.prompt-confirmation pre { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; padding: 8px; background: var(--bg); }
-.prompt-confirmation label { display: flex; align-items: start; gap: 8px; line-height: 1.5; }
-.prompt-error { color: #e74856; overflow-wrap: anywhere; }
-.prompt-message { color: var(--accent); }
 @media (max-width: 650px) { .tab { width: 190px; flex-basis: 190px; } .caption-button { width: 40px; } }

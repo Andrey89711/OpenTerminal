@@ -1,5 +1,5 @@
-mod prompt;
 mod terminal;
+mod windows_settings;
 
 use tauri::Manager;
 use terminal::TerminalManager;
@@ -12,10 +12,8 @@ pub fn run() {
             terminal::write_terminal,
             terminal::resize_terminal,
             terminal::close_terminal,
-            prompt::discover_openprompt,
-            prompt::openprompt_preview,
-            prompt::openprompt_set_theme,
-            prompt::openprompt_session_script,
+            windows_settings::list_windows_terminal_settings,
+            windows_settings::read_windows_terminal_settings,
         ])
         .build(tauri::generate_context!())
         .expect("Could not start OpenTerminal");

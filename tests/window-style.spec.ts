@@ -7,13 +7,14 @@ test.beforeEach(async ({ page }) => {
     const host = window as unknown as Record<string, unknown>;
     const calls: string[] = [];
     const input: string[] = [];
-    const ipcArgs: { command: string; args: Record<string, any> }[] = [];
     host.isTauri = true;
     host.__TEST_CALLS__ = calls;
     host.__TEST_INPUT__ = input;
-    host.__TEST_ARGS__ = ipcArgs;
     host.__TEST_COPIED__ = '';
+    host.__TEST_CLIPBOARD__ = '';
+    host.__TEST_CLIPBOARD_READS__ = 0;
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      readText: async () => { host.__TEST_CLIPBOARD_READS__ = Number(host.__TEST_CLIPBOARD_READS__) + 1; return host.__TEST_CLIPBOARD__; },
       writeText: async (text: string) => {
         if (host.__TEST_COPY_FAIL__) throw new Error('Clipboard unavailable');
         host.__TEST_COPIED__ = text;
@@ -25,17 +26,6 @@ test.beforeEach(async ({ page }) => {
       unregisterCallback: () => {},
       invoke: async (command: string, args: Record<string, any>) => {
         calls.push(command);
-        ipcArgs.push({ command, args });
-        if (command === 'discover_openprompt') {
-          if (host.__TEST_PROMPT_MISSING__) throw 'OpenPrompt не найден. Укажите путь к файлу.';
-          return { path: args.configuredPath || "C:\\User's files\\openprompt.exe", version: 'openprompt 0.2.0', dev_fallback: !args.configuredPath };
-        }
-        if (command === 'openprompt_preview') {
-          if (host.__TEST_PREVIEW_FAIL__) throw 'Нужен OpenPrompt 0.2+ с поддержкой preview --json.';
-          return { theme: args.theme, ansi: `\x1b[32m${args.theme} C:\\demo\x1b[0m > `, text: `${args.theme} C:\\demo > ` };
-        }
-        if (command === 'openprompt_session_script') return `Invoke-Expression (& '${args.path.replace(/'/g, "''")}' init powershell | Out-String)\r`;
-        if (command === 'openprompt_set_theme' && host.__TEST_SAVE_FAIL__) throw 'Не удалось сохранить тему.';
         if (command === 'write_terminal') input.push(args.data);
         if (command === 'plugin:window|is_maximized') return false;
         if (command === 'plugin:event|listen') return 1;
@@ -48,6 +38,48 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('tab')).toHaveCount(1);
+});
+
+test('RU to EN layout changes preserve physical copy, paste and interrupt shortcuts', async ({ page }) => {
+  await selectPromptPrefix(page);
+  const input = page.locator('.terminal-pane.active .xterm-helper-textarea');
+  await input.dispatchEvent('keydown', { key: 'с', code: 'KeyC', keyCode: 229, ctrlKey: true, bubbles: true, cancelable: true });
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_COPIED__)).toBe('PS');
+  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
+  await page.locator('.terminal-pane.active .xterm-screen').click();
+  for (const [key, text] of [['м', 'echo russian'], ['v', 'echo english']]) {
+    await page.evaluate((text) => { (window as any).__TEST_CLIPBOARD__ = text; }, text);
+    await input.dispatchEvent('keydown', { key, code: 'KeyV', keyCode: 229, ctrlKey: true, bubbles: true, cancelable: true });
+    await expect.poll(() => page.evaluate(() => (window as any).__TEST_CLIPBOARD_READS__)).toBe(text === 'echo russian' ? 1 : 2);
+  }
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__.join(''))).toBe('echo russianecho english');
+  for (const key of ['с', 'c']) {
+    await input.dispatchEvent('keydown', { key, code: 'KeyC', keyCode: 229, ctrlKey: true, bubbles: true, cancelable: true });
+  }
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__.filter((data: string) => data === '\x03').length)).toBe(2);
+  expect(await page.evaluate(() => (window as any).__TEST_CALLS__.filter((name: string) => name === 'create_terminal').length)).toBe(1);
+});
+
+test('plain Ctrl+V pastes once and Ctrl+Shift+T/W work with Russian symbols', async ({ page }) => {
+  await page.locator('.terminal-pane.active .xterm-screen').click();
+  await page.evaluate(() => { (window as any).__TEST_CLIPBOARD__ = 'echo once'; });
+  await page.keyboard.press('Control+v');
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__.join(''))).toBe('echo once');
+  await page.locator('.terminal-pane.active .xterm-helper-textarea').dispatchEvent('keydown', { key: 'е', code: 'KeyT', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+  await expect(page.getByRole('tab')).toHaveCount(2);
+  await page.locator('.terminal-pane.active .xterm-helper-textarea').dispatchEvent('keydown', { key: 'ц', code: 'KeyW', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+  await expect(page.getByRole('tab')).toHaveCount(1);
+});
+
+test('missing physical codes use RU fallback and AltGr does not trigger paste', async ({ page }) => {
+  await expect(page.locator('.terminal-pane.active .xterm-rows')).toContainText('PS C:');
+  const input = page.locator('.terminal-pane.active .xterm-helper-textarea');
+  await input.dispatchEvent('keydown', { key: 'м', code: 'KeyV', ctrlKey: true, altKey: true, bubbles: true, cancelable: true });
+  expect(await page.evaluate(() => (window as any).__TEST_CLIPBOARD_READS__)).toBe(0);
+  await page.evaluate(() => { (window as any).__TEST_CLIPBOARD__ = 'echo fallback'; });
+  await input.dispatchEvent('keydown', { key: 'м', code: '', ctrlKey: true, bubbles: true, cancelable: true });
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_CLIPBOARD_READS__)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__.join(''))).toContain('echo fallback');
 });
 
 test('Ctrl+wheel changes and persists font size, not page zoom or the shell session', async ({ page }) => {
@@ -94,7 +126,11 @@ test('Ctrl+C copies only selected text, shows confirmation on the right, and pre
   await page.keyboard.press('Control+c');
   await expect.poll(() => page.evaluate(() => (window as any).__TEST_COPIED__)).toBe('PS');
   const notice = page.getByRole('status');
-  await expect(notice).toHaveText('Copied to clipboard');
+  await expect(notice).toHaveText('Текст скопирован');
+  await expect(notice).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  await expect(notice).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(notice).toHaveCSS('border-radius', '0px');
+  await expect(notice).toHaveCSS('box-shadow', 'none');
   const rect = (await notice.boundingBox())!;
   expect(rect.x).toBeGreaterThan(800);
   expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).not.toContain('\x03');
@@ -108,7 +144,7 @@ test('clipboard failure does not claim success or interrupt the process', async 
   await page.evaluate(() => { (window as any).__TEST_COPY_FAIL__ = true; });
   await selectPromptPrefix(page);
   await page.keyboard.press('Control+c');
-  await expect(page.getByRole('status')).toHaveText('Copy failed');
+  await expect(page.getByRole('status')).toHaveText('Не удалось скопировать текст');
   expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).not.toContain('\x03');
 });
 
@@ -138,8 +174,10 @@ test('profiles, tab shortcuts, and closing a session still work', async ({ page 
 test('settings are in the dropdown and theme persists without restarting shells', async ({ page }) => {
   await page.getByRole('button', { name: 'Выбрать оболочку' }).click();
   await page.getByRole('button', { name: /Параметры/ }).click();
-  await page.getByLabel('Оформление').selectOption('light');
-  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Оформление', exact: true }).click();
+  await page.getByLabel('Тема приложения').selectOption('light');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('button', { name: 'Закрыть настройки', exact: true }).click();
   await expect(page.locator('.app')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   expect(await page.evaluate(() => (window as any).__TEST_CALLS__.filter((name: string) => name === 'create_terminal').length)).toBe(1);
   await page.reload();
@@ -165,79 +203,32 @@ async function openSettings(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /Параметры/ }).click();
 }
 
-test('OpenPrompt detection, read-only ANSI preview, explicit theme save and font persistence', async ({ page }) => {
+test('font selection persists without restarting or writing to the shell', async ({ page }) => {
   await openSettings(page);
-  await expect(page.getByText('openprompt 0.2.0', { exact: false })).toBeVisible();
-  const preview = page.getByLabel('ANSI-предпросмотр OpenPrompt');
-  await expect(preview.locator('.xterm')).toHaveCount(1);
-  await expect(preview.locator('.xterm-rows')).toContainText('classic C:\\demo');
-  await page.getByRole('combobox', { name: 'Тема OpenPrompt', exact: true }).selectOption('blocks');
-  await expect(preview.locator('.xterm-rows')).toContainText('blocks C:\\demo');
-  expect(await page.evaluate(() => (window as any).__TEST_CALLS__)).not.toContain('openprompt_set_theme');
-  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
-  await page.getByRole('button', { name: 'Сохранить тему', exact: true }).click();
-  await expect(page.getByRole('status')).toHaveText('Тема blocks сохранена в OpenPrompt.');
-  const save = await page.evaluate(() => (window as any).__TEST_ARGS__.find((call: any) => call.command === 'openprompt_set_theme'));
-  expect(save.args).toEqual({ path: "C:\\User's files\\openprompt.exe", theme: 'blocks' });
-  await page.getByRole('combobox', { name: /^Шрифт / }).selectOption('CaskaydiaCove Nerd Font');
+  await page.getByRole('button', { name: 'По умолчанию', exact: true }).click();
+  await page.getByLabel(/^Гарнитура шрифта/).fill('CaskaydiaCove Nerd Font');
+  await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('openterminal.settings')!).fontFamily)).toBe('CaskaydiaCove Nerd Font');
-  await page.keyboard.press('Escape');
-  await expect(preview).toHaveCount(0);
+  await page.getByRole('button', { name: 'Закрыть настройки', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__TEST_CALLS__.filter((name: string) => name === 'create_terminal').length)).toBe(1);
   await page.reload();
   await openSettings(page);
-  await expect(page.locator('select').filter({ has: page.locator('option[value="Consolas"]') })).toHaveValue('CaskaydiaCove Nerd Font');
+  await page.getByRole('button', { name: 'По умолчанию', exact: true }).click();
+  await expect(page.getByLabel(/^Гарнитура шрифта/)).toHaveValue('CaskaydiaCove Nerd Font');
   expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
 });
 
-test('OpenPrompt session command requires visible command and explicit approval every time', async ({ page }) => {
+test('settings discard legacy prompt integration and never discover or activate a prompt engine', async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('openterminal.settings', JSON.stringify({ fontSize: 16, theme: 'light', fontFamily: 'Consolas', promptPath: 'C:\\Tools\\openprompt.exe' })));
+  await page.reload();
   await openSettings(page);
-  const prepare = page.getByRole('button', { name: 'Включить в текущей сессии…' });
-  await expect(prepare).toBeEnabled();
-  await prepare.click();
-  const expected = "Invoke-Expression (& 'C:\\User''s files\\openprompt.exe' init powershell | Out-String)\r";
-  await expect(page.locator('.prompt-confirmation pre')).toHaveText(expected.trimEnd());
-  const execute = page.getByRole('button', { name: 'Выполнить команду', exact: true });
-  await expect(execute).toBeDisabled();
-  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
-  await page.getByLabel('Подтверждаю выполнение этой команды в текущей сессии').check();
-  await execute.click();
-  await expect.poll(() => page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([expected]);
-  await expect(page.locator('.prompt-confirmation')).toHaveCount(0);
-  await prepare.click();
-  await expect(execute).toBeDisabled();
-  await page.getByRole('button', { name: 'Отмена', exact: true }).click();
-  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([expected]);
-});
-
-test('OpenPrompt optional path, detection errors and preview errors are recoverable without session writes', async ({ page }) => {
-  await page.evaluate(() => { (window as any).__TEST_PROMPT_MISSING__ = true; });
-  await openSettings(page);
-  await expect(page.getByRole('alert')).toContainText('OpenPrompt не найден');
-  await expect(page.getByRole('button', { name: 'Сохранить тему', exact: true })).toBeDisabled();
-  await page.evaluate(() => { (window as any).__TEST_PROMPT_MISSING__ = false; });
-  await page.getByLabel('Путь к OpenPrompt (необязательно)').fill('C:\\Tools\\openprompt.exe');
-  await expect(page.locator('.prompt-found')).toContainText('C:\\Tools\\openprompt.exe');
-  await expect(page.getByLabel('ANSI-предпросмотр OpenPrompt').locator('.xterm')).toHaveCount(1);
-  await page.evaluate(() => { (window as any).__TEST_PREVIEW_FAIL__ = true; });
-  await page.getByRole('combobox', { name: 'Тема OpenPrompt', exact: true }).selectOption('minimal');
-  await expect(page.getByRole('alert')).toContainText('preview --json');
-  await expect(page.getByLabel('ANSI-предпросмотр OpenPrompt')).toHaveCount(0);
-  expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
-});
-
-test('OpenPrompt cannot enable CMD and never carries approval into another session', async ({ page }) => {
-  await openSettings(page);
-  await expect(page.getByRole('button', { name: 'Включить в текущей сессии…' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Включить в текущей сессии…' }).click();
-  await page.getByLabel('Подтверждаю выполнение этой команды в текущей сессии').check();
-  await page.keyboard.press('Control+Shift+t');
-  await expect(page.locator('.prompt-confirmation')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Закрыть настройки', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Параметры' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Выбрать оболочку' }).click();
-  await page.getByRole('button', { name: 'Command Prompt', exact: true }).click();
-  await openSettings(page);
-  await expect(page.locator('.prompt-found')).toContainText('openprompt 0.2.0');
-  await expect(page.getByRole('button', { name: 'Включить в текущей сессии…' })).toBeDisabled();
+  await page.getByRole('button', { name: 'По умолчанию', exact: true }).click();
+  await expect(page.getByLabel(/^Гарнитура шрифта/)).toHaveValue('Consolas');
+  await expect(page.getByText('OpenPrompt', { exact: true })).toHaveCount(0);
+  const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('openterminal.settings')!));
+  expect(migrated).toMatchObject({ version: 2, fontSize: 16, theme: 'light', fontFamily: 'Consolas' });
+  expect(migrated).not.toHaveProperty('promptPath');
+  const calls = await page.evaluate(() => (window as any).__TEST_CALLS__ as string[]);
+  expect(calls.some((name) => name.includes('openprompt'))).toBe(false);
   expect(await page.evaluate(() => (window as any).__TEST_INPUT__)).toEqual([]);
 });

@@ -1,0 +1,13 @@
+// Demo import fixture. Do not replace your Windows Terminal settings with it.
+{
+  "profiles": {
+    "defaults": {
+      "font": { "face": "Consolas", "size": 16 },
+      "colorScheme": "One Half Dark",
+    },
+    "list": [
+      { "name": "PowerShell без профиля", "commandline": "pwsh.exe -NoProfile" },
+      { "name": "Рабочая CMD", "commandline": "cmd.exe" },
+    ],
+  },
+}
